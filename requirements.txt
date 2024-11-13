@@ -5,3 +5,7 @@ transformers
 pandas
 setuptools>=65
 nltk
+ctranslate2==4.4.0
+wheel
+git+https://github.com/m-bain/whisperx.git
+git+https://github.com/aime-team/aime-api-worker-interface
