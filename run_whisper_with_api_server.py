@@ -1,18 +1,15 @@
 import argparse
 import logging
-import io
 import base64
 import torch
 import json
-import whisperx
-import contextlib
-from pydub.utils import mediainfo
-import torchaudio
-import wave
+import tempfile
 import gc
 import os
-import tempfile
 from aime_api_worker_interface import APIWorkerInterface
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "whisperx")))
+import whisperx
 
 WORKER_JOB_TYPE = "whisper_x"
 DEFAULT_WORKER_AUTH_KEY = "5b07e305b50505ca2b3284b4ae5f65d8"
@@ -24,10 +21,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def add_inference_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser.add_argument("--model_name", type=str, default="large-v2", help="WhisperX model size")
+    parser.add_argument("--model_name", type=str, default="large-v3", help="WhisperX model size")
     parser.add_argument("--auth_key", type=str, default=DEFAULT_WORKER_AUTH_KEY, help="API worker authentication key")
-    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for transcription")
-    parser.add_argument("--chunk_size", type=int, default=50, help="Chunk size for VAD segments in seconds")
     parser.add_argument("--print_progress", action="store_true", help="Print progress during transcription")
     return parser
 
@@ -52,26 +47,33 @@ def main():
 
     while True:
         job_data = api_worker.job_request()
+        print("Data received")
         job_id = job_data.get('job_id')
 
         if 'audio_input' in job_data:
             base64_data = job_data['audio_input'].split(',')[1]
-            
             audio_data = base64.b64decode(base64_data)
+            print("Data ready")
 
             with tempfile.NamedTemporaryFile(delete=False) as f:
                 f.write(audio_data)
                 temp_file_path = f.name
             
+            print("Temp file ready")
             audio = whisperx.load_audio(temp_file_path)
+            
+            
+            lang = None if job_data.get('src_lang') == "none" else job_data.get('src_lang')
+            chunk_size = int(job_data.get('chunk_size'))
 
             # Trancription
             result = model.transcribe(
-                audio, 
-                batch_size=args.batch_size, 
-                print_progress=args.print_progress,
+                audio,
+                print_progress = True,
+                language = lang,
+                chunk_size = chunk_size,
             )
-            logger.info(f"Transcribtion complete")
+            logger.info(f"Transcription complete")
             logger.info(result)
 
             # Alignment
@@ -79,32 +81,22 @@ def main():
                 language_code=result["language"], device=device
             )
             align_result = whisperx.align(
-                result["segments"], model_a, metadata, audio, device, return_char_alignments=False
+                result["segments"], model_a, metadata, audio, device, return_char_alignments=False, print_progress = True,
             )
-
+            align_result = json.dumps(align_result)
             logger.info(f"Alignment complete")
 
-            # Memory management: deleting models to free GPU resources
+            # Memory management
             del model_a
             gc.collect()
             if device == "cuda":
-                torch.cuda.empty_cache()
-
-            # Diarization
-            diarize_model = whisperx.DiarizationPipeline(
-                use_auth_token="hf_QyjnDmmxaMYlqTXaJPLXqGUkPtQWFjlYrBe", device=device
-            )
-            diarize_segments = diarize_model(audio)
-            logger.info(f"Diarization complete")
-            diarization_result = whisperx.assign_word_speakers(diarize_segments, align_result)
-            diarization_result = json.dumps(diarization_result)
-            logger.info(diarization_result)       
+                torch.cuda.empty_cache()     
 
             transcription_text = ' '.join(segment['text'] for segment in result['segments'])
 
             output = {
                 'result': transcription_text,
-                'diarization_result': diarization_result,
+                'align_result': align_result,
             }
             
             api_worker.send_job_results(output, job_id=job_id)
