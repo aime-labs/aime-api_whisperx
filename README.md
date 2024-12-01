@@ -68,7 +68,7 @@ Easy installation within an [AIME ML-Container](https://github.com/aime-team/aim
 ### 1. Create Python3.10 environment
 
 ```
-mlc create whisper_container Pytorch 2.1.0
+mlc create whisper_container Pytorch 2.1.2-aime
 ```
 ```
 mlc open whisper_container
@@ -84,16 +84,14 @@ pip install -e .
 
 ### 2. Install these system dependencies
 
-Install FFmpeg and Rust support:
+Install FFmpeg support:
 ```
 sudo apt update && sudo apt install ffmpeg
-```
-```
-pip install setuptools-rust
 ```
 
 
 <h2 align="left" id="inference"> Running inference </h2>
+
 ### Running WhisperX as HTTP/HTTPS API with AIME API Server
 
 To run  WhisperX as HTTP/HTTPS API with [AIME API Server](https://github.com/aime-team/aime-api-server) start following Python script through the command line:
@@ -103,7 +101,6 @@ python3 run_whisper_with_api_server.py --api_server <address of api server>
 ```
 
 It will start  WhisperX as worker, waiting for job request through the AIME API Server.
-
 
 
 <h2 align="left" id="example">Usage 💬 (command line)</h2>
